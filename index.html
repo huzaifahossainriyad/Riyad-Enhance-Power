@@ -1,11 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="bn">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Riyad Enhance Power</title>
+    <title>রিয়াদ এনহ্যান্স পাওয়ার</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        .filter-vintage { filter: sepia(0.6) contrast(0.9) brightness(1.1) saturate(1.2); }
+        .filter-bw-film { filter: grayscale(1) contrast(1.2) brightness(0.9); }
+    </style>
 <script type="importmap">
 {
   "imports": {
@@ -17,11 +21,11 @@
 }
 </script>
 </head>
-<body class="bg-gray-900 font-sans">
+<body class="bg-[#FFF8E1] font-sans">
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
-        import React, { useState, useCallback } from 'https://aistudiocdn.com/react@^19.1.1';
+        import React, { useState, useCallback, useRef } from 'https://aistudiocdn.com/react@^19.1.1';
         import ReactDOM from 'https://aistudiocdn.com/react-dom@^19.1.1/client';
         import { GoogleGenAI, Modality } from 'https://aistudiocdn.com/@google/genai@^1.20.0';
 
@@ -30,116 +34,179 @@
         
         const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null;
 
-        const ENHANCEMENT_PROMPT = `**CRITICAL RULE: DO NOT CHANGE THE PERSON'S IDENTITY.** The face, its structure, and all unique features (eyes, nose, mouth, facial shape) in the output photo must be an exact match to the original. Any alteration of the person's identity is a failure.
+        const ENHANCEMENT_PROMPT = `**CRITICAL RULE: DO NOT CHANGE THE PERSON'S IDENTITY.** The face, its structure, and all unique features (eyes, nose, mouth, facial shape) in the output photo must be an exact match to the original. Any alteration of the person's identity is a failure. Your task is to perform a professional-level photo enhancement based on this critical rule. Apply the following improvements: 1. **Upscale to Maximum Quality:** Significantly increase the image's resolution and sharpness. The goal is a crystal-clear, high-definition result with photorealistic detail. Eliminate any blurriness or digital noise. 2. **Professional Skin Retouching:** Perform a detailed and natural skin enhancement. Remove all temporary imperfections like acne, pimples, spots, and redness. Even out the skin tone for a smooth, clean appearance. It is important to preserve the natural skin texture. 3. **Advanced Lighting and Color Correction:** Automatically adjust the lighting and exposure for a professional look. Balance highlights and shadows to bring out detail. Correct any color cast and enhance the colors to be vibrant, rich, and true-to-life. The final image must be a dramatically improved, high-quality version of the original photo, showcasing the same person with flawless clarity.`;
 
-Your task is to perform a professional-level photo enhancement based on this critical rule. Apply the following improvements:
+        const FRAME_PROMPT = `Analyze the composition of this image. Your task is to apply an intelligent, aesthetically pleasing crop that enhances the main subject. Find the best aspect ratio and framing to create a professional-looking photo. The output must be only the cropped image. Do not add any text or explanation.`;
 
-1.  **Upscale to Maximum Quality:** Significantly increase the image's resolution and sharpness. The goal is a crystal-clear, high-definition result with photorealistic detail. Eliminate any blurriness or digital noise.
-2.  **Professional Skin Retouching:** Perform a detailed and natural skin enhancement. Remove all temporary imperfections like acne, pimples, spots, and redness. Even out the skin tone for a smooth, clean appearance. It is important to preserve the natural skin texture and not make it look artificial or plastic. Do not remove permanent features like moles or scars.
-3.  **Advanced Lighting and Color Correction:** Automatically adjust the lighting and exposure for a professional look. Balance highlights and shadows to bring out detail. Correct any color cast and enhance the colors to be vibrant, rich, and true-to-life.
-
-The final image must be a dramatically improved, high-quality version of the original photo, showcasing the same person with flawless clarity and professional polish.`;
-
-        const dataUrlToGeminiPart = (dataUrl) => {
-            const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
-            if (!match) throw new Error("Invalid data URL");
-            return { inlineData: { mimeType: match[1], data: match[2] } };
-        };
-
-        const enhanceImageWithGemini = async (imageDataUrl) => {
-            if (!ai) throw new Error("Cannot enhance image: API_KEY is not configured.");
+        const callGemini = async (imageDataUrl, prompt) => {
+             if (!ai) throw new Error("API_KEY কনফিগার করা নেই।");
             try {
-                const imagePart = dataUrlToGeminiPart(imageDataUrl);
+                const imagePart = { inlineData: { mimeType: imageDataUrl.match(/^data:(.+?);base64,/)[1], data: imageDataUrl.split(',')[1] } };
                 const response = await ai.models.generateContent({
                     model: 'gemini-2.5-flash-image-preview',
-                    contents: { parts: [imagePart, { text: ENHANCEMENT_PROMPT }] },
+                    contents: { parts: [imagePart, { text: prompt }] },
                     config: { responseModalities: [Modality.IMAGE, Modality.TEXT] },
                 });
                 
                 const imageParts = response.candidates?.[0]?.content?.parts?.filter(part => part.inlineData);
                 if (!imageParts || imageParts.length === 0 || !imageParts[0].inlineData) {
                     const textPart = response.candidates?.[0]?.content?.parts?.find(part => part.text)?.text;
-                    if (textPart) throw new Error(`Model returned text: ${textPart}`);
-                    throw new Error("No enhanced image data found in the response.");
+                    if (textPart) throw new Error(`মডেল টেক্সট পাঠিয়েছে: ${textPart}`);
+                    throw new Error("প্রতিক্রিয়াতে কোনো ছবির ডেটা পাওয়া যায়নি।");
                 }
 
-                const enhancedImagePart = imageParts[0].inlineData;
-                return `data:${enhancedImagePart.mimeType};base64,${enhancedImagePart.data}`;
+                const newImagePart = imageParts[0].inlineData;
+                return `data:${newImagePart.mimeType};base64,${newImagePart.data}`;
             } catch (error) {
-                console.error("Error enhancing image with Gemini:", error);
-                throw new Error(error instanceof Error ? `Failed to enhance image: ${error.message}` : "An unknown error occurred.");
+                console.error("Error with Gemini:", error);
+                throw new Error(error instanceof Error ? `AI অনুরোধ ব্যর্থ হয়েছে: ${error.message}` : "একটি অজানা ত্রুটি ঘটেছে।");
             }
         };
 
         // --- UI Components ---
-        const Spinner = () => (
-            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        const Spinner = ({ small = false }) => (
+            <svg className={`animate-spin -ml-1 mr-3 ${small ? 'h-4 w-4' : 'h-5 w-5'} text-white`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
         );
 
-        const ImagePreview = ({ title, imageUrl, isLoading = false, filter = 'filter-none' }) => (
+        const ImagePreview = ({ title, imageUrl, isLoading = false }) => (
             <div className="w-full">
-                <h2 className="text-xl font-semibold mb-4 text-center text-gray-300">{title}</h2>
-                <div className="relative w-full bg-gray-800 rounded-lg aspect-square flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-600">
+                <h2 className="text-xl font-semibold mb-4 text-center text-gray-700">{title}</h2>
+                <div className="relative w-full bg-[#F5EFE6] rounded-lg aspect-square flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-400">
                     {isLoading && (
-                        <div className="absolute inset-0 bg-black bg-opacity-50 flex flex-col items-center justify-center z-10">
+                        <div className="absolute inset-0 bg-black bg-opacity-50 flex flex-col items-center justify-center z-10 text-white">
                             <Spinner />
-                            <p className="mt-2 text-lg">Enhancing photo...</p>
+                            <p className="mt-2 text-lg">ছবি উন্নত করা হচ্ছে...</p>
                         </div>
                     )}
                     {imageUrl ? (
-                        <img 
-                            src={imageUrl} 
-                            alt={title} 
-                            className={`object-contain h-full w-full transition-all duration-300 ${filter}`} 
-                        />
+                        <img src={imageUrl} alt={title} className="object-contain h-full w-full" />
                     ) : (
                         <div className="text-gray-500 text-center px-4">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                             </svg>
-                            <p className="mt-2">{title === 'Original Image' ? 'Upload an image to start' : 'Enhanced image will appear here'}</p>
+                            <p className="mt-2">{title === 'মূল ছবি' ? 'শুরু করতে একটি ছবি আপলোড করুন' : 'উন্নত ছবি এখানে আসবে'}</p>
                         </div>
                     )}
                 </div>
             </div>
         );
+
+        const ImageComparator = ({ original, enhanced, filter = 'filter-none' }) => {
+            const [sliderPos, setSliderPos] = useState(50);
+            const imageContainerRef = useRef(null);
+
+            const handleMove = (clientX) => {
+                if (!imageContainerRef.current) return;
+                const rect = imageContainerRef.current.getBoundingClientRect();
+                const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+                const percent = (x / rect.width) * 100;
+                setSliderPos(percent);
+            };
+
+            const handleMouseMove = (e) => handleMove(e.clientX);
+            const handleTouchMove = (e) => handleMove(e.touches[0].clientX);
+
+            return (
+                <div className="w-full max-w-2xl">
+                    <h2 className="text-xl font-semibold mb-4 text-center text-gray-700">তুলনা করতে স্লাইড করুন</h2>
+                    <div ref={imageContainerRef} className="relative w-full aspect-square rounded-lg overflow-hidden select-none group border-2 border-dashed border-gray-400 cursor-ew-resize" onMouseMove={handleMouseMove} onTouchMove={handleTouchMove}>
+                        <img src={original} alt="Original" className="absolute inset-0 object-contain h-full w-full pointer-events-none" />
+                        <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }}>
+                            <img src={enhanced} alt="Enhanced" className={`object-contain h-full w-full pointer-events-none ${filter.startsWith('filter-') ? filter : ''}`} style={{ filter: !filter.startsWith('filter-') ? filter : ''}}/>
+                        </div>
+                        <div className="absolute inset-0 pointer-events-none" style={{ left: `calc(${sliderPos}% - 2px)` }}>
+                            <div className="w-1 h-full bg-white absolute shadow-md"></div>
+                            <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-10 w-10 rounded-full bg-white shadow-md flex items-center justify-center text-gray-600">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
         
+        const InfoModal = ({ onClose }) => (
+            <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+                <div className="bg-[#FFF8E1] text-gray-800 rounded-lg shadow-2xl w-full max-w-lg p-6 relative" onClick={e => e.stopPropagation()}>
+                    <button onClick={onClose} className="absolute top-2 right-2 text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+                    <h2 className="text-2xl font-bold mb-4 text-center text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-red-600">রিয়াদ এনহ্যান্স পাওয়ার</h2>
+                    <div className="space-y-4">
+                        <div>
+                            <h3 className="text-lg font-semibold border-b pb-1 mb-2">সংস্করণের নাম</h3>
+                            <p>রিয়াদ এনহ্যান্স পাওয়ার ৩.০</p>
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-semibold border-b pb-1 mb-2">নতুন কি আছে</h3>
+                            <ul className="list-disc list-inside space-y-1">
+                                <li>**ম্যাজিক ফ্রেম:** AI ব্যবহার করে ছবির জন্য সেরা ফ্রেম স্বয়ংক্রিয়ভাবে ক্রপ করে।</li>
+                                <li>**নতুন ফিল্টার:** 'ভিন্টেজ' এবং 'সাদাকালো ফিল্ম' নামে দুটি শৈল্পিক ফিল্টার যোগ করা হয়েছে।</li>
+                                <li>পূর্বের তুলনা স্লাইডার এবং সকল ফিচার উন্নত করা হয়েছে।</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-semibold border-b pb-1 mb-2">কিভাবে ব্যবহার করবেন</h3>
+                            <ol className="list-decimal list-inside space-y-1">
+                                <li>"ছবি আপলোড করুন" বোতামে ক্লিক করে আপনার ছবি নির্বাচন করুন।</li>
+                                <li>প্রথমে "ছবি উন্নত করুন" বোতামে ক্লিক করুন।</li>
+                                <li>ছবি উন্নত হওয়ার পর, "ম্যাজিক ফ্রেম" বোতামে ক্লিক করে স্বয়ংক্রিয়ভাবে ক্রপ করুন।</li>
+                                <li>ফিল্টার ড্রপডাউন থেকে আপনার পছন্দের ইফেক্ট বেছে নিন।</li>
+                                <li>"ডাউনলোড করুন" বোতামে ক্লিক করে চূড়ান্ত ছবিটি সংরক্ষণ করুন।</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
         // --- Main App Component ---
         const FILTERS = [
-            { name: 'No Filter', css: 'filter-none' },
-            { name: 'Grayscale', css: 'grayscale' },
-            { name: 'Sepia', css: 'sepia' },
-            { name: 'Invert Colors', css: 'invert' },
-            { name: 'Saturate', css: 'saturate-150' },
-            { name: 'Contrast', css: 'contrast-125' },
+            { name: 'কোন ফিল্টার নেই', css: 'none' },
+            { name: 'গ্রেস্কেল', css: 'grayscale(1)' },
+            { name: 'সেপিয়া', css: 'sepia(1)' },
+            { name: 'রং উল্টানো', css: 'invert(1)' },
+            { name: 'উজ্জ্বলতা বাড়ান', css: 'brightness(1.25)' },
+            { name: 'রঙ ঘোরান', css: 'hue-rotate(90deg)' },
+            { name: 'স্যাচুরেট', css: 'saturate(1.5)' },
+            { name: 'কনট্রাস্ট', css: 'contrast(1.25)' },
+            { name: 'ভিন্টেজ', css: 'sepia(0.6) contrast(0.9) brightness(1.1) saturate(1.2)' },
+            { name: 'সাদাকালো ফিল্ম', css: 'grayscale(1) contrast(1.2) brightness(0.9)' },
         ];
 
         const App = () => {
             const [originalImage, setOriginalImage] = useState(null);
-            const [enhancedImage, setEnhancedImage] = useState(null);
+            const [displayImage, setDisplayImage] = useState(null);
             const [isLoading, setIsLoading] = useState(false);
+            const [isFraming, setIsFraming] = useState(false);
             const [error, setError] = useState(null);
             const [selectedFilter, setSelectedFilter] = useState(FILTERS[0].css);
+            const [isModalOpen, setIsModalOpen] = useState(false);
+
+            const resetState = () => {
+                setDisplayImage(null);
+                setError(null);
+                setSelectedFilter(FILTERS[0].css);
+                setIsFraming(false);
+            };
 
             const handleFileChange = (event) => {
                 const file = event.target.files?.[0];
                 if (!file) return;
 
                 if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-                    setError('Please upload a valid image file (JPEG, PNG, WebP).');
+                    setError('অনুগ্রহ করে একটি বৈধ ছবির ফাইল (JPEG, PNG, WebP) আপলোড করুন।');
                     return;
                 }
 
                 const reader = new FileReader();
                 reader.onload = (e) => {
-                    const dataUrl = e.target?.result;
-                    setOriginalImage({ file, dataUrl });
-                    setEnhancedImage(null);
-                    setError(null);
-                    setSelectedFilter(FILTERS[0].css);
+                    setOriginalImage({ file, dataUrl: e.target.result });
+                    resetState();
                 };
                 reader.readAsDataURL(file);
             };
@@ -147,122 +214,152 @@ The final image must be a dramatically improved, high-quality version of the ori
             const handleEnhance = useCallback(async () => {
                 if (!originalImage) return;
                 setIsLoading(true);
-                setError(null);
-                setEnhancedImage(null);
-                setSelectedFilter(FILTERS[0].css);
+                resetState();
                 try {
-                    const result = await enhanceImageWithGemini(originalImage.dataUrl);
-                    setEnhancedImage(result);
+                    const result = await callGemini(originalImage.dataUrl, ENHANCEMENT_PROMPT);
+                    setDisplayImage(result);
                 } catch (err) {
-                    setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
+                    setError(err.message);
                 } finally {
                     setIsLoading(false);
                 }
             }, [originalImage]);
+            
+            const handleFrame = useCallback(async () => {
+                if (!displayImage) return;
+                setIsFraming(true);
+                setError(null);
+                try {
+                    const result = await callGemini(displayImage, FRAME_PROMPT);
+                    setDisplayImage(result);
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setIsFraming(false);
+                }
+            }, [displayImage]);
 
             const handleDownload = () => {
-                if (!enhancedImage) return;
-                const link = document.createElement('a');
-                link.href = enhancedImage;
-                const originalName = originalImage?.file.name.split('.').slice(0, -1).join('.');
-                link.download = `${originalName || 'enhanced'}-photo.png`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                if (!displayImage || !originalImage) return;
+
+                if (selectedFilter === 'none') {
+                    const link = document.createElement('a');
+                    link.href = displayImage;
+                    const originalName = originalImage.file.name.split('.').slice(0, -1).join('.');
+                    link.download = `${originalName || 'enhanced'}-photo.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    return;
+                }
+                
+                const image = new Image();
+                image.crossOrigin = 'anonymous';
+                image.src = displayImage;
+
+                image.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = image.naturalWidth;
+                    canvas.height = image.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        setError('ছবি ডাউনলোড করার জন্য ক্যানভাস তৈরি করা যায়নি।');
+                        return;
+                    }
+                    ctx.filter = selectedFilter;
+                    ctx.drawImage(image, 0, 0);
+                    const dataUrl = canvas.toDataURL('image/png');
+                    const link = document.createElement('a');
+                    link.href = dataUrl;
+                    const originalName = originalImage.file.name.split('.').slice(0, -1).join('.');
+                    link.download = `${originalName || 'enhanced'}-filtered.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                };
+                image.onerror = () => setError('ফিল্টার করা ছবি লোড করতে সমস্যা হয়েছে।');
             };
 
             return (
-                <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8">
-                    <div className="w-full max-w-6xl mx-auto text-white">
-                        <header className="text-center mb-8">
-                            <h1 className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
-                                Akash Computer Shop by Riyad Hossain Huzaifa Photo Enhance
-                            </h1>
-                            <p className="mt-2 text-lg text-gray-400">
-                                Upload your photo and let AI work its magic. Powered by Riyad Power
-                            </p>
-                        </header>
+                <>
+                    {isModalOpen && <InfoModal onClose={() => setIsModalOpen(false)} />}
+                    <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 text-gray-800">
+                        <div className="w-full max-w-6xl mx-auto">
+                            <header className="text-center mb-8">
+                                <h1 className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-red-600">
+                                    আকাশ কম্পিউটার শপ বাই রিয়াদ হোসাইন হুযাইফা ফটো এনহ্যান্স
+                                </h1>
+                                <p className="mt-2 text-lg text-gray-600">
+                                    আপনার ছবি আপলোড করুন এবং কৃত্রিম বুদ্ধিমত্তার জাদু দেখুন। পাওয়ার্ড বাই রিয়াদ পাওয়ার
+                                </p>
+                            </header>
 
-                        {error && (
-                            <div className="bg-red-500/20 border border-red-500 text-red-300 px-4 py-3 rounded-lg relative mb-6" role="alert">
-                                <strong className="font-bold">Error: </strong>
-                                <span className="block sm:inline">{error}</span>
-                            </div>
-                        )}
+                            {error && (
+                                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative mb-6" role="alert">
+                                    <strong className="font-bold">ত্রুটি: </strong>
+                                    <span className="block sm:inline">{error}</span>
+                                </div>
+                            )}
 
-                        <main className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                            <ImagePreview title="Original Image" imageUrl={originalImage?.dataUrl || null} />
-                            <div className="flex flex-col gap-4">
-                                <ImagePreview
-                                    title="Enhanced Image"
-                                    imageUrl={enhancedImage}
-                                    isLoading={isLoading}
-                                    filter={selectedFilter}
-                                />
-                                {enhancedImage && !isLoading && (
-                                    <div className="flex flex-col items-center gap-6 p-4 bg-gray-800 rounded-lg">
-                                        <div className="w-full max-w-xs">
-                                            <label htmlFor="filter-select" className="block text-sm font-medium text-gray-300 mb-2 text-center">
-                                                Apply a Filter
-                                            </label>
-                                            <select
-                                                id="filter-select"
-                                                value={selectedFilter}
-                                                onChange={(e) => setSelectedFilter(e.target.value)}
-                                                className="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                                            >
-                                                {FILTERS.map((filter) => (
-                                                    <option key={filter.css} value={filter.css}>
-                                                        {filter.name}
-                                                    </option>
-                                                ))}
-                                            </select>
+                            <main className="mb-8 flex justify-center">
+                                {displayImage && originalImage && !isLoading ? (
+                                    <div className="flex flex-col items-center gap-6 w-full">
+                                        <ImageComparator original={originalImage.dataUrl} enhanced={displayImage} filter={selectedFilter} />
+                                        <div className="flex flex-col sm:flex-row items-center gap-4 p-4 bg-[#F5EFE6] rounded-lg w-full max-w-2xl justify-center">
+                                            <div className="w-full sm:w-auto flex-grow">
+                                                <label htmlFor="filter-select" className="block text-sm font-medium text-gray-700 mb-2">ফিল্টার প্রয়োগ করুন</label>
+                                                <select id="filter-select" value={selectedFilter} onChange={(e) => setSelectedFilter(e.target.value)} className="bg-white border border-gray-400 text-gray-800 text-sm rounded-lg focus:ring-orange-500 focus:border-orange-500 block w-full p-2.5">
+                                                    {FILTERS.map((filter) => <option key={filter.name} value={filter.css}>{filter.name}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="w-full sm:w-auto flex flex-col gap-2">
+                                                <button onClick={handleFrame} disabled={isFraming} className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-bold py-2.5 px-6 rounded-lg transition-colors shadow-lg flex items-center justify-center">
+                                                     {isFraming && <Spinner small={true} />} {isFraming ? 'ফ্রেম হচ্ছে...' : 'ম্যাজিক ফ্রেম'}
+                                                </button>
+                                                <button onClick={handleDownload} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-6 rounded-lg transition-colors shadow-lg flex items-center justify-center">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                    ডাউনলোড করুন
+                                                </button>
+                                            </div>
                                         </div>
-                                        <button
-                                            onClick={handleDownload}
-                                            className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg flex items-center"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                            </svg>
-                                            Download Enhanced Image
-                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full">
+                                        <ImagePreview title="মূল ছবি" imageUrl={originalImage?.dataUrl || null} />
+                                        <ImagePreview title="উন্নত ছবি" imageUrl={null} isLoading={isLoading} />
                                     </div>
                                 )}
-                            </div>
-                        </main>
+                            </main>
 
-                        <footer className="flex flex-col items-center space-y-4">
-                            <div className="flex flex-wrap justify-center gap-4">
-                                <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg">
-                                    <span>Upload Photo</span>
-                                    <input type="file" className="hidden" accept="image/jpeg,image/png,image/webp" onChange={handleFileChange} />
-                                </label>
-                                <button
-                                    onClick={handleEnhance}
-                                    disabled={!originalImage || isLoading}
-                                    className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg flex items-center justify-center min-w-[170px]"
-                                >
-                                    {isLoading && <Spinner />}
-                                    {isLoading ? 'Enhancing...' : 'Enhance Photo'}
-                                </button>
-                            </div>
-                        </footer>
+                            <footer className="flex flex-col items-center space-y-4">
+                                <div className="flex flex-wrap justify-center gap-4">
+                                    <label className="cursor-pointer bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg">
+                                        <span>ছবি আপলোড করুন</span>
+                                        <input type="file" className="hidden" accept="image/jpeg,image/png,image/webp" onChange={handleFileChange} />
+                                    </label>
+                                    <button onClick={handleEnhance} disabled={!originalImage || isLoading} className="bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg flex items-center justify-center min-w-[170px]">
+                                        {isLoading && <Spinner />} {isLoading ? 'উন্নত হচ্ছে...' : 'ছবি উন্নত করুন'}
+                                    </button>
+                                    <button onClick={() => setIsModalOpen(true)} className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg">
+                                        নতুন কি আছে
+                                    </button>
+                                </div>
+                            </footer>
+                        </div>
                     </div>
-                </div>
+                </>
             );
         };
         
         const ApiKeyMissingScreen = () => (
-            <div className="min-h-screen flex flex-col items-center justify-center p-4">
-                <div className="w-full max-w-md bg-red-900/50 border border-red-500 rounded-lg p-6 text-center text-white">
-                    <h1 className="text-2xl font-bold mb-2">Configuration Error</h1>
-                    <p className="text-red-300">The application cannot start because the API_KEY is missing. Please ensure it is configured correctly in your environment.</p>
+            <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-[#FFF8E1]">
+                <div className="w-full max-w-md bg-red-100 border border-red-400 rounded-lg p-6 text-center text-red-700">
+                    <h1 className="text-2xl font-bold mb-2">কনফিগারেশন ত্রুটি</h1>
+                    <p>API_KEY অনুপস্থিত থাকার কারণে অ্যাপ্লিকেশনটি শুরু করা যাচ্ছে না।</p>
                 </div>
             </div>
         );
 
-        // --- Mount Application ---
         const rootElement = document.getElementById('root');
         const root = ReactDOM.createRoot(rootElement);
         if (API_KEY) {
